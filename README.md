@@ -15,7 +15,7 @@ gm800-kernel-6.1/
 ├── dts/rk3566-gm800.dts                      # 逐引脚核对的 GM800 专属 6.1 设备树
 ├── firmware/
 │   ├── regulatory.db(.p7s)                   # 无线电区域数据库
-│   ├── aic8800_sdio/                         # AIC8800D80 WiFi6/BT5 全套固件（15 文件）
+│   ├── aic8800/SDIO/aic8800D80/              # AIC8800D80 WiFi6/BT5 全套固件（15 文件，对齐 CONFIG_AIC_FW_PATH）
 │   └── silead/
 │       ├── gslx680-gm800.fw                  # 从原厂 4.19 内核精确提取的标准 Silead 触摸固件
 │       └── gslx6801_gm800_fw.h               # 同源 C 头文件备份（含 512 项 config_data_id）
@@ -78,9 +78,10 @@ scp artifacts/modules-6.1.*-gm800.tar.gz artifacts/firmware-gm800.tar.gz tools/g
 ssh root@<板IP> << 'EOF'
 tar -xzf /tmp/modules-6.1.*-gm800.tar.gz -C /lib/modules/
 tar -xzf /tmp/firmware-gm800.tar.gz -C /lib/firmware/
+depmod -a $(ls /lib/modules/ | grep 6.1 | tail -n1) 2>/dev/null || true
 install -m 755 /tmp/gm800-wifi-load-dual.sh /usr/local/sbin/gm800-wifi-load.sh
 sync
-ls -la /lib/modules/ /lib/firmware/silead/ /lib/firmware/aic8800_sdio/
+ls -la /lib/modules/ /lib/firmware/silead/ /lib/firmware/aic8800/SDIO/aic8800D80/
 EOF
 ```
 

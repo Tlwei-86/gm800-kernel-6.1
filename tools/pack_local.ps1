@@ -14,13 +14,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$KernelPath = Join-Path $ArtifactsDir "Image"
-$DtbPath    = Join-Path $ArtifactsDir "rk3566-gm800.dtb"
-$Builder    = Join-Path $PSScriptRoot "build_bootimg_61.py"
+$KernelFile = Get-ChildItem -Path $ArtifactsDir -Filter "Image" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+$DtbFile    = Get-ChildItem -Path $ArtifactsDir -Filter "rk3566-gm800.dtb" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
 
-if (!(Test-Path $KernelPath)) { throw "Missing $KernelPath (download from GitHub Actions Artifacts first)" }
-if (!(Test-Path $DtbPath))    { throw "Missing $DtbPath (download from GitHub Actions Artifacts first)" }
-if (!(Test-Path $Template))   { throw "Missing template $Template" }
+if (!$KernelFile) { throw "Missing Image under $ArtifactsDir (download from GitHub Actions Artifacts first)" }
+if (!$DtbFile)    { throw "Missing rk3566-gm800.dtb under $ArtifactsDir (download from GitHub Actions Artifacts first)" }
+if (!(Test-Path $Template)) { throw "Missing template $Template" }
+
+$KernelPath = $KernelFile.FullName
+$DtbPath    = $DtbFile.FullName
+$Builder    = Join-Path $PSScriptRoot "build_bootimg_61.py"
 
 $OutDir = Split-Path -Parent $Output
 if (!(Test-Path $OutDir)) { New-Item -ItemType Directory -Force -Path $OutDir | Out-Null }

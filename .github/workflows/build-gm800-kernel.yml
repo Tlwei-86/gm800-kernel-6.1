@@ -72,6 +72,13 @@ jobs:
             echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-gm800.dtb' >> linux-src/arch/arm64/boot/dts/rockchip/Makefile
           fi
 
+          # 1b. Fix upstream armbian/linux-rockchip Makefile typo so in-tree aic8800_sdio builds
+          #     (upstream uses undefined CONFIG_SPARD_WLAN_SUPPORT instead of CONFIG_AIC_WLAN_SUPPORT)
+          if grep -q "CONFIG_SPARD_WLAN_SUPPORT.*aic8800_sdio" linux-src/drivers/net/wireless/Makefile; then
+            sed -i 's/CONFIG_SPARD_WLAN_SUPPORT/CONFIG_AIC_WLAN_SUPPORT/' linux-src/drivers/net/wireless/Makefile
+            echo "Patched drivers/net/wireless/Makefile: CONFIG_SPARD_WLAN_SUPPORT -> CONFIG_AIC_WLAN_SUPPORT"
+          fi
+
           # 2. Pick base defconfig
           cd linux-src
           if [ -f arch/arm64/configs/rockchip_linux_defconfig ]; then
@@ -91,7 +98,7 @@ jobs:
 
           # 4. Print critical resolved flags
           echo "=== Verified Critical Kconfig Flags ==="
-          grep -E "^(CONFIG_EFI|CONFIG_SECURITY_SELINUX|CONFIG_KEXEC|CONFIG_PSTORE_RAM|CONFIG_REGULATOR_PWM|CONFIG_DRM_PANFROST|CONFIG_ROCKCHIP_RKNPU|CONFIG_ROCKCHIP_RGA2|CONFIG_BACKLIGHT_PWM|CONFIG_KEYBOARD_GPIO|CONFIG_TOUCHSCREEN_SILEAD|CONFIG_VIDEO_HI846|CONFIG_AIC8800|CONFIG_DWMAC_ROCKCHIP|CONFIG_USER_NS|CONFIG_WIREGUARD)=" .config || true
+          grep -E "^(CONFIG_EFI|CONFIG_SECURITY_SELINUX|CONFIG_KEXEC|CONFIG_PSTORE_RAM|CONFIG_REGULATOR_PWM|CONFIG_DRM_PANFROST|CONFIG_MALI400|CONFIG_MALI_MIDGARD|CONFIG_ROCKCHIP_RKNPU|CONFIG_ROCKCHIP_MULTI_RGA|CONFIG_BACKLIGHT_PWM|CONFIG_KEYBOARD_GPIO|CONFIG_TOUCHSCREEN_SILEAD|CONFIG_VIDEO_HI846|CONFIG_AIC_WLAN_SUPPORT|CONFIG_AIC_FW_PATH|CONFIG_AIC8800|CONFIG_DWMAC_ROCKCHIP|CONFIG_USER_NS|CONFIG_WIREGUARD)=" .config || true
 
       - name: Build ARM64 Image, GM800 DTB, and Kernel Modules
         run: |
@@ -129,11 +136,11 @@ jobs:
           # Package GM800 firmware bundle (1:1 mirror of /lib/firmware/)
           tar -C firmware -czf "$OUT/firmware-gm800.tar.gz" \
             --exclude='*.h' \
-            regulatory.db regulatory.db.p7s aic8800_sdio silead
+            regulatory.db regulatory.db.p7s aic8800 silead
 
-          # Sanity check binary headers + key modules
+          # Sanity check binary headers + mandatory key modules
           python3 - << 'PYEOF'
-          import os, struct, subprocess
+          import os, struct, tarfile
 
           img = open("dist/Image", "rb").read(64)
           c0, c1, toff, isz, flg, _, _, _, mag = struct.unpack("<IIQQQQQQ4s", img[:60])
@@ -143,8 +150,47 @@ jobs:
           dtb = open("dist/rk3566-gm800.dtb", "rb").read()
           assert dtb[:4] == b"\xd0\x0d\xfe\xed", "Bad DTB magic!"
 
+          krel = os.environ.get("KERNEL_RELEASE") or open("linux-src/include/config/kernel.release").read().strip()
+          mod_tar = f"dist/modules-{krel}.tar.gz"
+          with tarfile.open(mod_tar, "r:gz") as tf:
+              names = tf.getnames()
+          basenames = {os.path.basename(n) for n in names}
+          required = [
+              "panfrost.ko",
+              "silead.ko",
+              "hi846.ko",
+              "aic8800_bsp.ko",
+              "aic8800_fdrv.ko",
+              "aic8800_btlpm.ko",
+              "wireguard.ko",
+              "zram.ko",
+          ]
+          missing = [m for m in required if m not in basenames]
+          assert not missing, f"Missing required kernel modules: {missing}"
+
+          # Verify AIC8800 firmware path inside compiled aic8800_bsp.ko
+          with tarfile.open(mod_tar, "r:gz") as tf:
+              bsp_member = next(m for m in tf.getmembers() if os.path.basename(m.name) == "aic8800_bsp.ko")
+              bsp_bytes = tf.extractfile(bsp_member).read()
+          assert b"/lib/firmware/aic8800/SDIO/aic8800D80/" in bsp_bytes, \
+              "Expected firmware path /lib/firmware/aic8800/SDIO/aic8800D80/ not found in aic8800_bsp.ko!"
+
+          # Verify firmware bundle contains required AIC8800D80 u02 & Silead files
+          with tarfile.open("dist/firmware-gm800.tar.gz", "r:gz") as tf:
+              fw_names = set(tf.getnames())
+          for expected_fw in [
+              "silead/gslx680-gm800.fw",
+              "aic8800/SDIO/aic8800D80/fmacfw_8800d80_u02.bin",
+              "aic8800/SDIO/aic8800D80/fw_adid_8800d80_u02.bin",
+              "aic8800/SDIO/aic8800D80/fw_patch_8800d80_u02.bin",
+              "aic8800/SDIO/aic8800D80/fw_patch_table_8800d80_u02.bin",
+          ]:
+              assert expected_fw in fw_names, f"Missing firmware file in bundle: {expected_fw}"
+
           print(f"Image OK: magic={mag}, c0=0x{c0:08x}, text_off=0x{toff:x}, img_size=0x{isz:x}")
           print(f"DTB OK: size={len(dtb)} bytes")
+          print(f"Modules OK: all {len(required)} required modules verified (incl. aic8800_bsp/fdrv/btlpm)")
+          print("Firmware OK: /lib/firmware/aic8800/SDIO/aic8800D80/ path & files verified!")
           PYEOF
 
           # Generate SHA256SUMS

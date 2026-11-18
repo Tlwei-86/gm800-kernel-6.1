@@ -394,7 +394,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wifi_host_wake_irq>;
 		WIFI,host_wake_irq = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
-		WIFI,poweren_gpio = <&gpio2 RK_PB1 GPIO_ACTIVE_HIGH>;
+		/* Note: Do NOT duplicate WIFI,poweren_gpio here; sdio_pwrseq already
+		 * owns gpio2 RK_PB1 (matches factory 4.19 DTB, avoids -EBUSY conflict). */
 		status = "okay";
 	};
 
@@ -580,7 +581,7 @@
 		disp_timings0: display-timings {
 			native-mode = <&dsi0_timing0>;
 			dsi0_timing0: timing0 {
-				clock-frequency = <77960000>;
+				clock-frequency = <77886272>;
 				hactive = <800>;
 				vactive = <1280>;
 				hfront-porch = <40>;

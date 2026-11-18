@@ -27,7 +27,7 @@ case "$KVER" in
         insmod "$K/aic8800_fdrv.ko" 2>/dev/null; sleep 8
         ;;
     *)
-        # Linux 6.1 BSP path: native modprobe from /lib/modules/$KVER + /lib/firmware/aic8800_sdio
+        # Linux 6.1 BSP path: native modprobe from /lib/modules/$KVER + /lib/firmware/aic8800/SDIO/aic8800D80/
         H=/sys/bus/platform/drivers/dwmmc_rockchip
         DEV=fe2c0000.mmc
         [ -e "$H/fe2c0000.dwmmc" ] && DEV=fe2c0000.dwmmc
@@ -35,10 +35,10 @@ case "$KVER" in
         # If already brought up automatically by udev, skip rebind dance
         if [ ! -d /sys/class/net/wlan0 ]; then
             echo "$DEV" > "$H/unbind" 2>/dev/null; sleep 1
-            modprobe aic8800_bsp 2>/dev/null || modprobe aic_load_fw 2>/dev/null
+            modprobe aic8800_bsp 2>/dev/null || true
             modprobe aic8800_btlpm 2>/dev/null || true
             echo "$DEV" > "$H/bind" 2>/dev/null; sleep 4
-            modprobe aic8800_fdrv 2>/dev/null || modprobe aic8800_wlan 2>/dev/null
+            modprobe aic8800_fdrv 2>/dev/null || true
             sleep 5
         fi
         ;;
