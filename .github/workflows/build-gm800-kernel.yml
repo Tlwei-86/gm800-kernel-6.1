@@ -15,6 +15,11 @@ on:
         description: "LOCALVERSION suffix"
         required: true
         default: "-gm800"
+      dtb_only:
+        description: "Fast mode: compile only rk3566-gm800.dtb (~2 min)"
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -110,6 +115,10 @@ jobs:
           NPROC=$(nproc)
           echo "Step 1: Compiling GM800 DTB first..."
           make rockchip/rk3566-gm800.dtb
+          if [ "${{ inputs.dtb_only }}" = "true" ]; then
+            echo "dtb_only=true: skipping Image & modules compilation."
+            exit 0
+          fi
           echo "Step 2: Compiling Image and modules with $NPROC threads..."
           make -j"$NPROC" CC="ccache aarch64-linux-gnu-gcc" Image modules
           ccache -s
@@ -118,6 +127,23 @@ jobs:
         run: |
           set -euo pipefail
           OUT="$PWD/dist"
+          mkdir -p "$OUT"
+
+          if [ "${{ inputs.dtb_only }}" = "true" ]; then
+            echo "KERNEL_RELEASE=6.1-dtb-only" >> "$GITHUB_ENV"
+            cp linux-src/arch/arm64/boot/dts/rockchip/rk3566-gm800.dtb "$OUT/rk3566-gm800.dtb"
+            python3 - << 'PYEOF'
+          dtb = open("dist/rk3566-gm800.dtb", "rb").read()
+          assert dtb[:4] == b"\xd0\x0d\xfe\xed", "Bad DTB magic!"
+          assert b"snps,dwcmshc-sdhci" in dtb, "Missing U-Boot eMMC compatible snps,dwcmshc-sdhci!"
+          assert b"WIFI,poweren_gpio" not in dtb, "Unexpected WIFI,poweren_gpio conflict!"
+          print(f"DTB OK (dtb_only): size={len(dtb)} bytes, snps,dwcmshc-sdhci verified!")
+          PYEOF
+            (cd "$OUT" && sha256sum rk3566-gm800.dtb > SHA256SUMS.txt)
+            cat "$OUT/SHA256SUMS.txt"
+            exit 0
+          fi
+
           mkdir -p "$OUT/modroot"
           KREL=$(cat linux-src/include/config/kernel.release)
           echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
