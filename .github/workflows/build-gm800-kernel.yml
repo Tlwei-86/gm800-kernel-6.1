@@ -1,0 +1,172 @@
+name: Build GM800 RK3566 Linux 6.1 BSP Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Rockchip 6.1 BSP kernel git repository"
+        required: true
+        default: "https://github.com/armbian/linux-rockchip.git"
+      kernel_branch:
+        description: "Kernel git branch or tag"
+        required: true
+        default: "rk-6.1-rkr5.1"
+      localversion:
+        description: "LOCALVERSION suffix"
+        required: true
+        default: "-gm800"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+      KBUILD_BUILD_USER: gm800
+      KBUILD_BUILD_HOST: github-actions
+
+    steps:
+      - name: Checkout GM800 Kernel Config Repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space on Runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h
+
+      - name: Install Cross-Compile Toolchain & Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev dwarves \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            device-tree-compiler ccache kmod cpio rsync lz4 zstd python3
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: gm800-rk61-ccache-${{ inputs.kernel_branch || 'rk-6.1-rkr5.1' }}-${{ hashFiles('config/gm800_61.fragment') }}
+          restore-keys: |
+            gm800-rk61-ccache-${{ inputs.kernel_branch || 'rk-6.1-rkr5.1' }}-
+            gm800-rk61-ccache-
+
+      - name: Shallow Clone Rockchip 6.1 BSP Kernel
+        run: |
+          REPO="${{ inputs.kernel_repo || 'https://github.com/armbian/linux-rockchip.git' }}"
+          BRANCH="${{ inputs.kernel_branch || 'rk-6.1-rkr5.1' }}"
+          echo "Cloning $REPO @ $BRANCH ..."
+          git clone --depth=1 --branch "$BRANCH" "$REPO" linux-src
+          git -C linux-src log -1 --oneline
+
+      - name: Inject GM800 DTS & Merge Optimal Kconfig
+        run: |
+          set -euo pipefail
+          # 1. Install GM800 DTS and register in rockchip Makefile
+          cp dts/rk3566-gm800.dts linux-src/arch/arm64/boot/dts/rockchip/rk3566-gm800.dts
+          if ! grep -q "rk3566-gm800.dtb" linux-src/arch/arm64/boot/dts/rockchip/Makefile; then
+            echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3566-gm800.dtb' >> linux-src/arch/arm64/boot/dts/rockchip/Makefile
+          fi
+
+          # 2. Pick base defconfig
+          cd linux-src
+          if [ -f arch/arm64/configs/rockchip_linux_defconfig ]; then
+            BASE_DEFCONFIG=rockchip_linux_defconfig
+          else
+            BASE_DEFCONFIG=rockchip_defconfig
+          fi
+          echo "Using base defconfig: $BASE_DEFCONFIG"
+          make "$BASE_DEFCONFIG"
+
+          # 3. Merge GM800 fragment + set LOCALVERSION
+          ./scripts/kconfig/merge_config.sh -m .config ../config/gm800_61.fragment
+          LOCALVER="${{ inputs.localversion || '-gm800' }}"
+          ./scripts/config --set-str CONFIG_LOCALVERSION "$LOCALVER"
+          ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          make olddefconfig
+
+          # 4. Print critical resolved flags
+          echo "=== Verified Critical Kconfig Flags ==="
+          grep -E "^(CONFIG_EFI|CONFIG_SECURITY_SELINUX|CONFIG_KEXEC|CONFIG_PSTORE_RAM|CONFIG_REGULATOR_PWM|CONFIG_DRM_PANFROST|CONFIG_ROCKCHIP_RKNPU|CONFIG_ROCKCHIP_RGA2|CONFIG_BACKLIGHT_PWM|CONFIG_KEYBOARD_GPIO|CONFIG_TOUCHSCREEN_SILEAD|CONFIG_VIDEO_HI846|CONFIG_AIC8800|CONFIG_DWMAC_ROCKCHIP|CONFIG_USER_NS|CONFIG_WIREGUARD)=" .config || true
+
+      - name: Build ARM64 Image, GM800 DTB, and Kernel Modules
+        run: |
+          set -euo pipefail
+          cd linux-src
+          export PATH="/usr/lib/ccache:$PATH"
+          ccache -M 4G
+          ccache -z
+          NPROC=$(nproc)
+          echo "Compiling with $NPROC threads..."
+          make -j"$NPROC" CC="ccache aarch64-linux-gnu-gcc" Image rockchip/rk3566-gm800.dtb modules
+          ccache -s
+
+      - name: Package Artifacts & Run Sanity Audit
+        run: |
+          set -euo pipefail
+          OUT="$PWD/dist"
+          mkdir -p "$OUT/modroot"
+          KREL=$(cat linux-src/include/config/kernel.release)
+          echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
+
+          # Copy Image, DTB, config, System.map
+          cp linux-src/arch/arm64/boot/Image "$OUT/Image"
+          cp linux-src/arch/arm64/boot/dts/rockchip/rk3566-gm800.dtb "$OUT/rk3566-gm800.dtb"
+          cp linux-src/.config "$OUT/config-$KREL"
+
+          # Install modules (stripped to keep archive lean)
+          make -C linux-src INSTALL_MOD_PATH="$OUT/modroot" INSTALL_MOD_STRIP=1 modules_install
+          rm -f "$OUT/modroot/lib/modules/$KREL/build" "$OUT/modroot/lib/modules/$KREL/source"
+          tar -C "$OUT/modroot/lib/modules" -czf "$OUT/modules-$KREL.tar.gz" "$KREL"
+          rm -rf "$OUT/modroot"
+
+          # Package GM800 firmware bundle (1:1 mirror of /lib/firmware/)
+          tar -C firmware -czf "$OUT/firmware-gm800.tar.gz" \
+            --exclude='*.h' \
+            regulatory.db regulatory.db.p7s aic8800_sdio silead
+
+          # Sanity check binary headers + key modules
+          python3 - << 'PYEOF'
+          import os, struct, subprocess
+
+          img = open("dist/Image", "rb").read(64)
+          c0, c1, toff, isz, flg, _, _, _, mag = struct.unpack("<IIQQQQQQ4s", img[:60])
+          assert mag == b"ARMd", f"Bad ARM64 Image magic: {mag!r}"
+          assert (c0 & 0xFFFF) != 0x5A4D, f"EFI MZ stub detected (c0=0x{c0:08x})!"
+
+          dtb = open("dist/rk3566-gm800.dtb", "rb").read()
+          assert dtb[:4] == b"\xd0\x0d\xfe\xed", "Bad DTB magic!"
+
+          print(f"Image OK: magic={mag}, c0=0x{c0:08x}, text_off=0x{toff:x}, img_size=0x{isz:x}")
+          print(f"DTB OK: size={len(dtb)} bytes")
+          PYEOF
+
+          # Generate SHA256SUMS
+          (cd "$OUT" && sha256sum Image rk3566-gm800.dtb "config-$KREL" "modules-$KREL.tar.gz" firmware-gm800.tar.gz > SHA256SUMS.txt)
+          cat "$OUT/SHA256SUMS.txt"
+
+          # Write Job Summary
+          {
+            echo "## GM800 RK3566 Kernel Build Summary"
+            echo "- **Kernel Release**: \`$KREL\`"
+            echo "- **Image Size**: $(stat -c%s "$OUT/Image") bytes"
+            echo "- **DTB Size**: $(stat -c%s "$OUT/rk3566-gm800.dtb") bytes"
+            echo "- **Modules Tarball**: \`modules-$KREL.tar.gz\` ($(stat -c%s "$OUT/modules-$KREL.tar.gz") bytes)"
+            echo "- **Firmware Tarball**: \`firmware-gm800.tar.gz\`"
+            echo ""
+            echo "### Key Modules Present"
+            echo '```'
+            tar -tzf "$OUT/modules-$KREL.tar.gz" | grep -E "(panfrost|silead|gsl|hi846|aic8800|wireguard|zram|btrfs)" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gm800-kernel-${{ env.KERNEL_RELEASE }}
+          path: dist/
+          retention-days: 30

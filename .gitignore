@@ -1,0 +1,8 @@
+artifacts/
+out/
+dist/
+linux-src/
+__pycache__/
+*.pyc
+*.img
+*.tar.gz
