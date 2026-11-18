@@ -47,6 +47,13 @@
 		bootargs = "earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0";
 	};
 
+	firmware {
+		optee: optee {
+			compatible = "linaro,optee-tz";
+			method = "smc";
+		};
+	};
+
 	reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
@@ -528,6 +535,7 @@
 &vop {
 	assigned-clocks = <&cru DCLK_VOP0>, <&cru DCLK_VOP1>;
 	assigned-clock-parents = <&pmucru PLL_HPLL>, <&cru PLL_VPLL>;
+	support-multi-area;
 	status = "okay";
 };
 
@@ -1007,6 +1015,32 @@
 
 &usbhost_dwc3 {
 	dr_mode = "host";
+	status = "okay";
+};
+
+/* ===================== U-Boot 2017.09 GPIO & WDT Compat ===================== */
+
+&gpio0 {
+	gpio-ranges = <&pinctrl 0 0 32>;
+};
+
+&gpio1 {
+	gpio-ranges = <&pinctrl 0 32 32>;
+};
+
+&gpio2 {
+	gpio-ranges = <&pinctrl 0 64 32>;
+};
+
+&gpio3 {
+	gpio-ranges = <&pinctrl 0 96 32>;
+};
+
+&gpio4 {
+	gpio-ranges = <&pinctrl 0 128 32>;
+};
+
+&wdt {
 	status = "okay";
 };
 
