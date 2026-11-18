@@ -63,7 +63,7 @@
 		ramoops: ramoops@110000 {
 			compatible = "ramoops";
 			reg = <0x0 0x110000 0x0 0xf0000>;
-			record-size = <0x20000>;
+			record-size = <0x10000>;
 			console-size = <0x80000>;
 			ftrace-size = <0x0>;
 			pmsg-size = <0x50000>;
@@ -186,6 +186,8 @@
 	vcc5v0_otg: vcc5v0-otg-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc5v0_otg";
+		regulator-boot-on;
+		regulator-always-on;
 		enable-active-high;
 		gpio = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
