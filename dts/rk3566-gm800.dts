@@ -52,16 +52,6 @@
 		#size-cells = <2>;
 		ranges;
 
-		drm_logo: drm-logo@00000000 {
-			compatible = "rockchip,drm-logo";
-			reg = <0x0 0x0 0x0 0x0>;
-		};
-
-		drm_cubic_lut: drm-cubic-lut@00000000 {
-			compatible = "rockchip,drm-cubic-lut";
-			reg = <0x0 0x0 0x0 0x0>;
-		};
-
 		/* Preserves kernel panic/dmesg logs across soft reboot (no UART soldering needed) */
 		ramoops: ramoops@110000 {
 			compatible = "ramoops";

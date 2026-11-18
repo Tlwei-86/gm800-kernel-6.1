@@ -101,8 +101,10 @@ jobs:
           ccache -M 4G
           ccache -z
           NPROC=$(nproc)
-          echo "Compiling with $NPROC threads..."
-          make -j"$NPROC" CC="ccache aarch64-linux-gnu-gcc" Image rockchip/rk3566-gm800.dtb modules
+          echo "Step 1: Compiling GM800 DTB first..."
+          make rockchip/rk3566-gm800.dtb
+          echo "Step 2: Compiling Image and modules with $NPROC threads..."
+          make -j"$NPROC" CC="ccache aarch64-linux-gnu-gcc" Image modules
           ccache -s
 
       - name: Package Artifacts & Run Sanity Audit
