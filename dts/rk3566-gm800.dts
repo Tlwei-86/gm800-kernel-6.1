@@ -565,6 +565,7 @@
 		status = "okay";
 		compatible = "simple-panel-dsi";
 		reg = <0>;
+		bpc = <8>;
 		backlight = <&backlight1>;
 		reset-delay-ms = <60>;
 		enable-delay-ms = <120>;
