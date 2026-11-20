@@ -566,6 +566,7 @@
 		compatible = "simple-panel-dsi";
 		reg = <0>;
 		bpc = <8>;
+		bus-format = <0x100a>;
 		backlight = <&backlight1>;
 		reset-delay-ms = <60>;
 		enable-delay-ms = <120>;
@@ -644,6 +645,10 @@
 
 /* ===================== Ethernet (RTL8201F 100M RMII) ===================== */
 
+&gmac1_clkin {
+	clock-frequency = <50000000>;
+};
+
 &gmac1 {
 	phy-mode = "rmii";
 	clock_in_out = "input";
@@ -721,17 +726,17 @@
 	 * Hardware pins verified from factory DTB: IRQ=GPIO0_PB5, RST/PWR=GPIO0_PB6.
 	 */
 	touchscreen@40 {
-		compatible = "silead,gsl3673";
+		compatible = "silead,gsl3670", "silead,gsl1680";
 		reg = <0x40>;
 		interrupt-parent = <&gpio0>;
-		interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <RK_PB5 IRQ_TYPE_EDGE_FALLING>;
 		power-gpios = <&gpio0 RK_PB6 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&tp_gpio>;
 		touchscreen-size-x = <1280>;
 		touchscreen-size-y = <800>;
 		silead,max-fingers = <5>;
-		firmware-name = "silead/gslx680-gm800.fw";
+		firmware-name = "gslx680-gm800.fw";
 		status = "okay";
 	};
 
@@ -1089,7 +1094,7 @@
 	tp {
 		tp_gpio: tp-gpio {
 			rockchip,pins = <0 RK_PB6 RK_FUNC_GPIO &pcfg_pull_up>,
-					<0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
+					<0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
