@@ -84,6 +84,9 @@ jobs:
             echo "Patched drivers/net/wireless/Makefile: CONFIG_SPARD_WLAN_SUPPORT -> CONFIG_AIC_WLAN_SUPPORT"
           fi
 
+          # 1c. Patch aic8800_bsp stack buffer bug (prevent aicbt_patch_trap_data_load stack smashing panic)
+          python3 tools/patch_aic8800_bsp.py linux-src
+
           # 2. Pick base defconfig
           cd linux-src
           if [ -f arch/arm64/configs/rockchip_linux_defconfig ]; then
@@ -103,7 +106,7 @@ jobs:
 
           # 4. Print critical resolved flags
           echo "=== Verified Critical Kconfig Flags ==="
-          grep -E "^(CONFIG_EFI|CONFIG_SECURITY_SELINUX|CONFIG_KEXEC|CONFIG_PSTORE_RAM|CONFIG_REGULATOR_PWM|CONFIG_DRM_PANFROST|CONFIG_MALI400|CONFIG_MALI_MIDGARD|CONFIG_ROCKCHIP_RKNPU|CONFIG_ROCKCHIP_MULTI_RGA|CONFIG_BACKLIGHT_PWM|CONFIG_KEYBOARD_GPIO|CONFIG_TOUCHSCREEN_SILEAD|CONFIG_VIDEO_HI846|CONFIG_AIC_WLAN_SUPPORT|CONFIG_AIC_FW_PATH|CONFIG_AIC8800|CONFIG_DWMAC_ROCKCHIP|CONFIG_USER_NS|CONFIG_WIREGUARD)=" .config || true
+          grep -E "^(CONFIG_EFI|CONFIG_SECURITY_SELINUX|CONFIG_KEXEC|CONFIG_PSTORE_RAM|CONFIG_REGULATOR_PWM|CONFIG_DRM_PANFROST|CONFIG_MALI400|CONFIG_MALI_MIDGARD|CONFIG_ROCKCHIP_RKNPU|CONFIG_ROCKCHIP_MULTI_RGA|CONFIG_BACKLIGHT_PWM|CONFIG_KEYBOARD_GPIO|CONFIG_TOUCHSCREEN_SILEAD|CONFIG_VIDEO_HI846|CONFIG_AIC_WLAN_SUPPORT|CONFIG_AIC_FW_PATH|CONFIG_AIC8800|CONFIG_DWMAC_ROCKCHIP|CONFIG_USER_NS|CONFIG_WIREGUARD|CONFIG_NF_NAT|CONFIG_IP_NF_NAT|CONFIG_IP_MULTIPLE_TABLES|CONFIG_ZRAM|CONFIG_NTFS3_FS|CONFIG_COMPACTION)=" .config || true
 
       - name: Build ARM64 Image, GM800 DTB, and Kernel Modules
         run: |
@@ -190,6 +193,7 @@ jobs:
               "aic8800_btlpm.ko",
               "wireguard.ko",
               "zram.ko",
+              "ntfs3.ko",
           ]
           missing = [m for m in required if m not in basenames]
           assert not missing, f"Missing required kernel modules: {missing}"
@@ -234,7 +238,7 @@ jobs:
             echo ""
             echo "### Key Modules Present"
             echo '```'
-            tar -tzf "$OUT/modules-$KREL.tar.gz" | grep -E "(panfrost|silead|gsl|hi846|aic8800|wireguard|zram|btrfs)" || true
+            tar -tzf "$OUT/modules-$KREL.tar.gz" | grep -E "(panfrost|silead|gsl|hi846|aic8800|wireguard|zram|btrfs|ntfs3)" || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
